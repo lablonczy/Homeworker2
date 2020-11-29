@@ -10,8 +10,10 @@ import java.util.LinkedList;
 
 public class BlackboardRetriever extends Retriever{
 
-
+	Networker net;
+	
 	public LinkedList<Assignment> retrieve() throws InterruptedException, IOException, URISyntaxException {
+		net = getNetworker();
 		login();
 		return getAssns(getAllClassIDs());
 	}
@@ -20,7 +22,8 @@ public class BlackboardRetriever extends Retriever{
 		LinkedList<Assignment> assns = new LinkedList<>();
 		String nextUrl;
 
-		for(String id : classIds){
+		//threads here
+		/*for(String id : classIds){
 			nextUrl = "https://blackboard.sc.edu/webapps/blackboard/execute/modulepage/view?course_id=" + id + "&cmp_tab_id=_564695_1&mode=view";
 			buildCookieRequest(nextUrl);
 			String classHtml = stdResponseBodyWithSend();
@@ -31,14 +34,89 @@ public class BlackboardRetriever extends Retriever{
 				assns.addAll(getAssns(id, link));
 
 			}
+		}*/
+		
+		for(String id : classIds){
+			new ClassThread(assns, id, net.getCookie()).start();
 		}
 
 		return assns;
 	}
+	
+	private class ClassThread extends Thread {
+		String id;
+		LinkedList<Assignment> assns;
+		Networker networker;
+		
+		public ClassThread(LinkedList<Assignment> assns, String id) {
+			init(assns,id);
+		}
+		
+		public ClassThread(LinkedList<Assignment> assns, String id, String cookie) {
+			init(assns,id);
+			networker.setCookie(cookie);
+		}
+		
+		private void init(LinkedList<Assignment> assns, String id) {
+			this.id = id;
+			this.assns = assns;
+			this.networker = new Networker();
+		}
+		
+		public void run() {
+			try {
+				String nextUrl = "https://blackboard.sc.edu/webapps/blackboard/execute/modulepage/view?course_id=" + id + "&cmp_tab_id=_564695_1&mode=view";
+				networker.buildCookieRequest(nextUrl);
+				String classHtml = networker.stdResponseBodyWithSend();
+	
+				if(classHtml.contains("Assignments")){
+	
+					String link = "https://blackboard.sc.edu" + extractAssnsLink(classHtml, "/webapps/blackboard/content/listContent.jsp\\?course_id=" + id + "&content_id=[^&]+&mode=reset(?=[\\s\\S]{0,100}Assignments)", "Link To Assns Page", "/webapps/blackboard/content/listContent.jsp?course_id=" + id, "&mode=reset");
+					assns.addAll(getAssns(networker, id, link));
+	
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+	}
+	
+	private class AssnsThread extends Thread {
+		
+		LinkedList<Assignment> assns;
+		String type, subjectID, contentID, responseHTML;
+		Networker networker;
+		
+		public AssnsThread(LinkedList<Assignment> assns, String type, String subjectID, String contentID, String responseHTML, String cookie) {
+			this.assns = assns;
+			this.type = type;
+			this.subjectID = subjectID;
+			this.contentID = contentID;
+			this.responseHTML = responseHTML;
+			networker = new Networker();
+			networker.setCookie(cookie);
+		}
+		
+		public void run() {
+			try {
+				switch (type) {
+					case "Assignment": assns.add(parseAssn(networker, subjectID, contentID)); break;
+					case "Test" : assns.add(parseTest(networker, subjectID, contentID)); break;
+					case "Content Folder" : assns.addAll(getAssns(networker, subjectID, "https://blackboard.sc.edu" + fetchValue(responseHTML, "/webapps/blackboard/content/listContent.jsp\\?course_id=\\S{0,15}&content_id=" + contentID))); break; //todo add link
+					case "McGraw-Hill Assignment Dynamic": assns.add(parseMGH(contentID, responseHTML)); break;
+					case "Survey": assns.add(parseSurvery(subjectID)); break;
+					default: parseOther(type);
+				}
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		
+	}
 
-	private LinkedList<Assignment> getAssns(String subjectID, String link) throws URISyntaxException, IOException, InterruptedException {
-		buildCookieRequest(link);
-		String responseHTML = stdResponseBodyWithSend();
+	private LinkedList<Assignment> getAssns(Networker networker, String subjectID, String link) throws URISyntaxException, IOException, InterruptedException {
+		networker.buildCookieRequest(link);
+		String responseHTML = networker.stdResponseBodyWithSend();
 
 		LinkedList<Assignment> assns = new LinkedList<>();
 
@@ -55,19 +133,21 @@ public class BlackboardRetriever extends Retriever{
 		}
 
 
+		//threads here
 		for(Iterator<String> idIterator = contentIDs.iterator(), typesIterator = contentTypes.iterator(); idIterator.hasNext() && typesIterator.hasNext();){
 			String contentID = idIterator.next();
 			String type = typesIterator.next();
 
-			switch (type) {
+			/*switch (type) {
 				case "Assignment": assns.add(parseAssn(subjectID, contentID)); break;
 				case "Test" : assns.add(parseTest(subjectID, contentID)); break;
-				case "Content Folder" : assns.addAll(getAssns(subjectID, "https://blackboard.sc.edu" + fetchValue(responseHTML, "/webapps/blackboard/content/listContent.jsp\\?course_id=\\S{0,15}&content_id=" + contentID))); break; //todo add link
-//				case "Content Folder" : assns.add(new Assignment("Uknown MGH", "Uknown Due"));; break; //todo add link
+				case "Content Folder" : assns.addAll(getAssns(subjectID, "https://blackboard.sc.edu" + fetchValue(responseHTML, "/webapps/blackboard/content/listContent.jsp\\?course_id=\\S{0,15}&content_id=" + contentID), net)); break; //todo add link
 				case "McGraw-Hill Assignment Dynamic": assns.add(parseMGH(contentID, responseHTML)); break;
 				case "Survey": assns.add(parseSurvery(subjectID)); break;
 				default: parseOther(type);
-			}
+			}*/
+			String s = networker.getCookie();
+			new AssnsThread(assns, type, subjectID, contentID, responseHTML, networker.getCookie()).start();
 		}
 
 		return assns;
@@ -135,19 +215,19 @@ public class BlackboardRetriever extends Retriever{
 		return new String[] {firstHalf, secondHalf};
 	}
 
-	private Assignment parseAssn(String subjectID, String contentID) throws URISyntaxException, IOException, InterruptedException {
-		buildCookieRequest("https://blackboard.sc.edu/webapps/assignment/uploadAssignment?content_id=" + contentID + "&course_id=" + subjectID +"&group_id=&mode=view");
+	private Assignment parseAssn(Networker networker, String subjectID, String contentID) throws URISyntaxException, IOException, InterruptedException {
+		networker.buildCookieRequest("https://blackboard.sc.edu/webapps/assignment/uploadAssignment?content_id=" + contentID + "&course_id=" + subjectID +"&group_id=&mode=view");
 
-		String toParse = stdResponseBodyWithSend();
+		String toParse = networker.stdResponseBodyWithSend();
 		String[] values = getAssnNameDate(toParse);
 
 		return new Assignment(values[0], values[1]);
 	}
 
-	private Assignment parseTest(String subjectID, String contentID) throws URISyntaxException, IOException, InterruptedException {
-		buildCookieRequest("https://blackboard.sc.edu/webapps/assessment/take/launchAssessment.jsp?content_id=" + contentID + "&course_id=" + subjectID +"&group_id=&mode=view");
+	private Assignment parseTest(Networker networker, String subjectID, String contentID) throws URISyntaxException, IOException, InterruptedException {
+		networker.buildCookieRequest("https://blackboard.sc.edu/webapps/assessment/take/launchAssessment.jsp?content_id=" + contentID + "&course_id=" + subjectID +"&group_id=&mode=view");
 
-		String htmlToParse = stdResponseBodyWithSend();
+		String htmlToParse = networker.stdResponseBodyWithSend();
 
 		char[] htmlChars = htmlToParse.toCharArray();
 		char[] firstComparator = "Due Date".toCharArray();
@@ -207,13 +287,13 @@ public class BlackboardRetriever extends Retriever{
 	private Assignment parseOther(String type){
 		//System.out.println(type);
 
-		return new Assignment("Unknown unsupported name", "Unknown Due");
+		return new Assignment("Unknown *unsupported name*", "Unknown Due");
 	}
 
 	private LinkedList<String> getAllClassIDs() throws URISyntaxException, IOException, InterruptedException {
 		String nextUrl = "https://blackboard.sc.edu/learn/api/v1/users/_1710804_1/memberships?expand=course.effectiveAvailability,course.permissions,courseRole&includeCount=true&limit=10000";
-		buildCookieRequest(nextUrl);
-		String jsonToParse = stdResponseBodyWithSend();
+		net.buildCookieRequest(nextUrl);
+		String jsonToParse = net.stdResponseBodyWithSend();
 
 		LinkedList<String> classLines = splitJson(jsonToParse);
 		classLines.removeIf(classLine -> !classLine.contains(getTermName()));
@@ -258,17 +338,17 @@ public class BlackboardRetriever extends Retriever{
 	protected void login() throws URISyntaxException, IOException, InterruptedException {
 
 		String nextUrl = "https://cas.auth.sc.edu/cas/login?service=https%3A%2F%2Fblackboard.sc.edu%2Fwebapps%2Fbb-auth-provider-cas-BB5dd6acf5e22a7%2Fexecute%2FcasLogin%3Fcmd%3Dlogin%26authProviderId%3D_132_1%26redirectUrl%3Dhttps%253A%252F%252Fblackboard.sc.edu%252Fultra%26globalLogoutEnabled%3Dtrue";
-		buildStdRequest(nextUrl);
+		net.buildStdRequest(nextUrl);
 
-		String exec = extractValue(stdResponseBodyWithSend(),"execution", "(?<=name=\"execution\" value=\")[^\"]*", "Extract Exec");
+		String exec = extractValue(net.stdResponseBodyWithSend(),"execution", "(?<=name=\"execution\" value=\")[^\"]*", "Extract Exec");
 
 		nextUrl = "https://cas.auth.sc.edu/cas/login";
 		String LoginPOSTbody = "username=" + USER + "&password=" + PASS + "&execution=" + exec + "&_eventId=submit&geolocation=";
-		request = stdRequestBuilder(nextUrl).header("Content-Type","application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(LoginPOSTbody)).build();
+		net.setRequest(net.stdRequestBuilder(nextUrl).header("Content-Type","application/x-www-form-urlencoded").POST(HttpRequest.BodyPublishers.ofString(LoginPOSTbody)).build());
 
-		LinkedList<String> cookies = new LinkedList<>(stdResponse().headers().allValues("set-cookie"));
+		LinkedList<String> cookies = new LinkedList<>(net.stdResponse().headers().allValues("set-cookie"));
 
-		cookie = cookies.get(0) + ";" + cookies.get(1) + ";" + cookies.get(2);
+		net.setCookie(cookies.get(0) + ";" + cookies.get(1) + ";" + cookies.get(2));
 	}
 
 	private String extractAssnsLink(String toParse, final String REGEX, String name, String... matchContains){

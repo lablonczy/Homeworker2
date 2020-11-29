@@ -36,6 +36,15 @@ public class Assignment{
 		else
 			return due;
 	}
+	
+	private String enforceFormat(String due) {
+		int firstSpace = due.indexOf(" ");
+		
+		if((due.charAt(firstSpace) + 2) == ' ')
+			return due.substring(0, firstSpace) + "0" + due.substring(firstSpace + 2);
+		
+		return due;
+	}
 
 	public void setDue(String due) {
 		final String[] weekdays = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
@@ -44,8 +53,9 @@ public class Assignment{
 				due = due.substring(due.indexOf(",") + 2);
 
 		due = reduceDue(due);
+		
+		due = enforceFormat(due);
 
-		//date problem bc day doesn't always have 0X for days < 10
 		this.due = due;
 	}
 

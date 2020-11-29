@@ -16,9 +16,10 @@ public class Driver {
 		LinkedList<Assignment> assns = null;
 		try {
 			long bbTime = System.currentTimeMillis();
-			assns = new BlackboardRetriever().retrieve();
+			BlackboardRetriever bb = new BlackboardRetriever();
+			assns = bb.retrieve();
 			bbTime = (System.currentTimeMillis() - bbTime)/1000;
-			System.out.println("found " + assns.size() + " blackboard assns in " + bbTime + " secs, which is " + (bbTime > 5.0 ? "slow as shit":"alright\n"));
+			System.out.println("found " + assns.size() + " blackboard assns in " + bbTime + " secs, which is " + (bbTime > 5.0 ? "slow as shit":"alright\n") + " with " + bb.getNetworker().reqs +" requests and " + bb.getNetworker().avgReqTime/bb.getNetworker().reqs + " ms per req");
 
 
 		} catch (InterruptedException e) {
@@ -28,9 +29,23 @@ public class Driver {
 		} catch (URISyntaxException e) {
 			e.printStackTrace();
 		}
+		
+		try {
+			Thread.sleep(5000);
+			
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
 		assns.forEach( (assn) -> System.out.println((assn.getDue().toUpperCase().contains(month)?"\n~~~~~~~~~~~ " + assn + "\n":assn)));
 
 
 	}
+	
+//	private void bbTester() {
+//		String url = "https://blackboard.sc.edu";
+//		
+//		HttpsURLConnection connect = 
+//	}
 
 }

@@ -9,28 +9,22 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public abstract class Retriever {
-
+	
+	protected Networker networker;
 	private boolean doDebug = false;
-	protected HttpClient client;
-	protected HttpRequest request;
-	protected HttpResponse<String> response;
-	protected String cookie;
-//	protected String nextUrl;
-
-	protected static final HttpResponse.BodyHandler<String> BASIC_HANDLER = HttpResponse.BodyHandlers.ofString();
 	protected static final String USER = "lukacsa", PASS = "Crashcourse1*";
 
 	public abstract LinkedList<Assignment> retrieve() throws InterruptedException, IOException, URISyntaxException;
 
 	public Retriever(){
-		client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();
-		cookie = "";
-//		nextUrl = "";
-		request = null;
-		response = null;
+		networker = new Networker();
 	}
 
-	protected String extractTag(String toParse, String toMatch, String tagName){
+	public Networker getNetworker() {
+		return networker;
+	}
+	
+	protected static String extractTag(String toParse, String toMatch, String tagName){
 		//read until <tagName is found, record until > is found, take index + 1.
 		char[] htmlChars = toParse.toCharArray();
 		String comparator = toMatch;
@@ -148,31 +142,6 @@ public abstract class Retriever {
 		return null;
 	}
 
-	protected void buildCookieRequest(String url) throws URISyntaxException {
-		request = stdRequestBuilder(url).header("Cookie", cookie).build();
-	}
-
-	protected HttpRequest.Builder stdRequestBuilder(String url) throws URISyntaxException {
-		return HttpRequest.newBuilder(new URI(url));
-	}
-
-	protected HttpRequest buildStdRequest(String url) throws URISyntaxException {
-		request = stdRequestBuilder(url).build();
-		return request;
-	}
-
-	protected String stdResponseBodyWithSend() throws IOException, InterruptedException {
-		return stdResponse().body();
-	}
-
-	protected String stdResponseBody() throws IOException, InterruptedException {
-		return response.body();
-	}
-
-	protected HttpResponse<String> stdResponse() throws IOException, InterruptedException {
-		response = client.send(request, BASIC_HANDLER);
-		return response;
-	}
 
 	//helper functions
 	protected void doDebug(String toPrint){
